@@ -151,43 +151,50 @@ CD_IOVD_av.Betas{4} = mean(tmp4,3); % IOVD, cont
 % to be in same space as IOVD and FULL.
 
 %% Resample CD data to be in same amplitude space as IOVD and FULL.
+% Here, we will first add ones to the space where there's no data for CD.
+% This is because we can assume there is zero sensitivity for CD at ranges > 16.67 arcmin.
+% Then we can DOWNSAMPLE the data; hopefully giving us a smoother estimate.
 
 % Remember that now, the desired and current source frequencies are the same.
 sourceFreq = desired_frequency;
 % Same goes for the CD source amplitudes.
-sourceCDAmp = desired_amplitudes_CD;
+sourceCDAmp = [desired_amplitudes_CD, 35.98, 77.51, 167]; % Add the hypothetical amplitudes to CD
 new_CD_desired_amp = desired_amplitudes_IOVD; % same existing amplitude range as FULL and IOVD
 
 % We want to resample the data, so we set up the grids needed for the interpolation here.
 % Remember that frequency is the same for all.
 [d_fr, d_am_CD] = meshgrid(desired_frequency, new_CD_desired_amp);  % grid of the desired parameters: CD
-[~, CD_source_am] = meshgrid (sourceFreq, sourceCDAmp);             % grid of original CD parameters
+[CD_new_src_freq, CD_source_am] = meshgrid (sourceFreq, sourceCDAmp);             % grid of original CD parameters
 
+%%
 % Now loop across the 4 subjects and the 2 threshold types: coherence and contrast.
 % Remember that resulting order of matrices are: CD coh, CD cont, (1&2)
 for subject = 1:4
     for signal = 1:2
-        % Downsample the betas and sensitivities (inverse alphas) here.
-        CD_IOVD{subject}.Betas{signal} = interp2(d_fr, CD_source_am, CD_IOVD{subject}.Betas{signal}, d_fr, d_am_CD); % Downsampled betas for CD
-        CD_IOVD{subject}.Sens{signal} = interp2(d_fr, CD_source_am, CD_IOVD{subject}.Sens{signal}, d_fr, d_am_CD);   % Downsampled inverse alphas for CD
         
-        % We need to replace the NaNs in the resampled CD data with zeros or ones.
-        % (should these be ones? since that is equal to no sensitivity/threshold for the other inverse alpha data)
-        %... it seems to make no difference on the fitted coefficients... and the GoF values...
-        CD_IOVD{subject}.Betas{signal}(isnan(CD_IOVD{subject}.Betas{signal})) = 1;
-        CD_IOVD{subject}.Sens{signal}(isnan(CD_IOVD{subject}.Sens{signal})) = 1;
+        % First, add the 1s to the empty space:
+        CD_IOVD{subject}.Betas{signal} = [CD_IOVD{subject}.Betas{signal}; ones(3,5)]; %(those go on the bottom; later we the matrix upside down for plotting).
+        CD_IOVD{subject}.Sens{signal} = [CD_IOVD{subject}.Sens{signal}; ones(3,5)]; 
+        
+        % Downsample the betas and sensitivities (inverse alphas) here.
+        CD_IOVD{subject}.Betas{signal} = interp2(CD_new_src_freq, CD_source_am, CD_IOVD{subject}.Betas{signal}, d_fr, d_am_CD); % Downsampled betas for CD
+        CD_IOVD{subject}.Sens{signal} = interp2(CD_new_src_freq, CD_source_am, CD_IOVD{subject}.Sens{signal}, d_fr, d_am_CD);   % Downsampled inverse alphas for CD
+        
     end
 end
 
 %%
 % Now do the same for the average (CD coh and cont only):
 for signal = 1:2
-    CD_IOVD_av.Betas{signal} = interp2(d_fr, CD_source_am, CD_IOVD_av.Betas{signal}, d_fr, d_am_CD);
-    CD_IOVD_av.Sens{signal} = interp2(d_fr, CD_source_am, CD_IOVD_av.Sens{signal}, d_fr, d_am_CD);
     
-    % Replace NaNs:
-    CD_IOVD_av.Betas{signal}(isnan(CD_IOVD_av.Betas{signal})) = 1;
-    CD_IOVD_av.Sens{signal}(isnan(CD_IOVD_av.Sens{signal})) = 1;
+    % Add the one's to the hypothetical space now:
+    CD_IOVD_av.Betas{signal} = [CD_IOVD_av.Betas{signal}; ones(3,5)];
+    CD_IOVD_av.Sens{signal} = [CD_IOVD_av.Sens{signal}; ones(3,5)];
+    
+    % Now perform the interpolation:
+    CD_IOVD_av.Betas{signal} = interp2(CD_new_src_freq, CD_source_am, CD_IOVD_av.Betas{signal}, d_fr, d_am_CD);
+    CD_IOVD_av.Sens{signal} = interp2(CD_new_src_freq, CD_source_am, CD_IOVD_av.Sens{signal}, d_fr, d_am_CD);
+    
 end
 
 % We should now have everything we need to perform the modelling.
@@ -198,6 +205,7 @@ nfuncevals = 20000;
 defopts = optimset ('fminsearch');
 options = optimset (defopts, 'Display', 'iter', 'MaxFunEvals', nfuncevals, 'MaxIter', 8000, 'PlotFcns', @optimplotfval);
 
+%%
 for signal = 1:2 % loop across coherence and contrast
     
     % Initial guess of parameters
@@ -276,6 +284,7 @@ end
 % and the coefficients used on the interpolated data to display predictions.
 % But this will be done in a different script: MID_psychophysics_plot_matrices.m
 
+%%
 % Save the modelling results, as well as the averages across subjects
 save('MID_psychophysics_SIMPLEX_modelling_results.mat', 'GofFit_av_data', 'w_m1_av_data', 'w_m2_av_data', ...
     'GofFit', 'w_m1', 'w_m2', 'FULLcue_av', 'CD_IOVD_av');
